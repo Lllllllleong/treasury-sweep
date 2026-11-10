@@ -1,0 +1,18 @@
+# Local planning notes (job-application specific): never commit
+/private/
+
+# Gradle, Kotlin and IntelliJ
+.gradle/
+.kotlin/
+build/
+out/
+.idea/
+*.iml
+
+# Local secrets
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
