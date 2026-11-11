@@ -128,17 +128,7 @@ class LedgerServiceTest(
         val customerId = jdbc.sql("INSERT INTO customers (name) VALUES ('Test customer') RETURNING id")
             .query { rs, _ -> rs.getLong(1) }
             .single()
-        return jdbc.sql(
-            """
-            INSERT INTO accounts (code, customer_id, normal_balance, debits_must_not_exceed_credits)
-            VALUES (:code, :customerId, 'CREDIT', true)
-            RETURNING id
-            """
-        )
-            .param("code", "customer:$customerId:cash")
-            .param("customerId", customerId)
-            .query { rs, _ -> rs.getLong(1) }
-            .single()
+        return ledger.openCustomerCashAccount(customerId)
     }
 
     /** A standalone account with no customer, for testing the limit flag in isolation. */
