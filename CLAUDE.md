@@ -41,4 +41,13 @@ Leong is learning Kotlin and Spring Boot. He writes Go in production and knows J
 
 ## Commands
 
-To fill in after scaffolding (Phase 0), for example `./gradlew test`, `./gradlew bootRun`, `docker compose up -d`, `kubectl apply -f k8s/`.
+Docker must be running for anything that starts PostgreSQL (tests and `bootTestRun`). `./gradlew` works in PowerShell and Git Bash.
+
+- `./gradlew build`: compile and run all tests; this is what CI runs (`.github/workflows/build.yml`).
+- `./gradlew test`: tests only. One class: `./gradlew test --tests '*TreasurySweepApplicationTests'`.
+- `./gradlew bootTestRun`: run the app against a throwaway Testcontainers PostgreSQL (`TestTreasurySweepApplication`). No `compose.yaml` needed.
+
+Not yet available; update this list when they work:
+
+- `docker compose up -d` then `./gradlew bootRun`: once `compose.yaml` exists (S1 or S3).
+- `kubectl apply -f k8s/`: once the manifests exist (Saturday stretch or U4).
