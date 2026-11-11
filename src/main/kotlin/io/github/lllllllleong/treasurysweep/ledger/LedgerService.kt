@@ -1,8 +1,10 @@
 package io.github.lllllllleong.treasurysweep.ledger
 
+import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import kotlin.jvm.optionals.getOrNull
 
 @Service
 class LedgerService(private val jdbc: JdbcClient) {
@@ -57,31 +59,50 @@ class LedgerService(private val jdbc: JdbcClient) {
         return TransferResult.Posted(transferId)
     }
 
-    /** Locks the account row until the current transaction ends; other lockers wait. */
-    private fun lockAccount(id: Long): LockedAccount =
+    /**
+     * Opens a customer's cash account: credit-normal (it's money owed to the customer) with no overdraft.
+     * Runs in the caller's transaction, so the customer row and its account commit together.
+     */
+    fun openCustomerCashAccount(customerId: Long): Long =
         jdbc.sql(
             """
-            SELECT id, debits_posted, credits_posted, debits_must_not_exceed_credits
-            FROM accounts
-            WHERE id = :id
-            FOR UPDATE
+            INSERT INTO accounts (code, customer_id, normal_balance, debits_must_not_exceed_credits)
+            VALUES (:code, :customerId, 'CREDIT', true)
+            RETURNING id
             """
         )
-            .param("id", id)
-            .query { rs, _ ->
-                LockedAccount(
-                    id = rs.getLong("id"),
-                    debitsPosted = Money(rs.getLong("debits_posted")),
-                    creditsPosted = Money(rs.getLong("credits_posted")),
-                    debitsMustNotExceedCredits = rs.getBoolean("debits_must_not_exceed_credits"),
-                )
-            }
+            .param("code", AccountCodes.customerCash(customerId))
+            .param("customerId", customerId)
+            .query { rs, _ -> rs.getLong(1) }
             .single()
 
-    private data class LockedAccount(
-        val id: Long,
-        val debitsPosted: Money,
-        val creditsPosted: Money,
-        val debitsMustNotExceedCredits: Boolean,
-    )
+    fun findAccount(code: String): Account? =
+        jdbc.sql("SELECT $ACCOUNT_COLUMNS FROM accounts WHERE code = :code")
+            .param("code", code)
+            .query(ACCOUNT_ROW)
+            .optional()
+            .getOrNull()
+
+    /** Locks the account row until the current transaction ends; other lockers wait. */
+    private fun lockAccount(id: Long): Account =
+        jdbc.sql("SELECT $ACCOUNT_COLUMNS FROM accounts WHERE id = :id FOR UPDATE")
+            .param("id", id)
+            .query(ACCOUNT_ROW)
+            .single()
+
+    private companion object {
+        const val ACCOUNT_COLUMNS =
+            "id, code, normal_balance, debits_must_not_exceed_credits, debits_posted, credits_posted"
+
+        val ACCOUNT_ROW = RowMapper { rs, _ ->
+            Account(
+                id = rs.getLong("id"),
+                code = rs.getString("code"),
+                normalBalance = NormalBalance.valueOf(rs.getString("normal_balance")),
+                debitsMustNotExceedCredits = rs.getBoolean("debits_must_not_exceed_credits"),
+                debitsPosted = Money(rs.getLong("debits_posted")),
+                creditsPosted = Money(rs.getLong("credits_posted")),
+            )
+        }
+    }
 }
