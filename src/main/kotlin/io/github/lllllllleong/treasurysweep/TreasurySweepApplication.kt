@@ -7,5 +7,5 @@ import org.springframework.boot.runApplication
 class TreasurySweepApplication
 
 fun main(args: Array<String>) {
-	runApplication<TreasurySweepApplication>(*args)
+    runApplication<TreasurySweepApplication>(*args)
 }
