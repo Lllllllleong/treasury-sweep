@@ -77,11 +77,11 @@ I4 holds by construction (every event in the transfer table moves both sides by 
 Follows the IETF draft *The Idempotency-Key HTTP Header Field* (draft-07, October 2025):
 
 - Missing key on an endpoint that requires one: `400`.
-- First request with a key: processed; the response status and body are stored with a hash of the method, path and body.
-- Same key, same request: the stored response is returned and no new transfer is posted.
-- Same key, different request: `422`, as the draft recommends.
-- Same key while the first request is still running: the draft suggests `409`. v1 default: the second request waits on the unique index, then replays the stored response. Record the choice as decision D5.
-- Stored: successes and business rejections such as insufficient funds, so a retry gets the same answer. Not stored: malformed requests (`400`), so the client can fix them and retry with the same key.
+- First request with a key: processed; its outcome (the transfer id, or the decline reason) is stored with a fingerprint of the request: the transfer kind and the amount in cents, so JSON formatting doesn't make a different request.
+- Same key, same request: the response is rebuilt from the stored outcome, so it matches the first one, and no new transfer is posted.
+- Same key, different request: `422` with code `idempotency_key_reused`, as the draft recommends.
+- Same key while the first request is still running: the draft suggests `409`. v1 (decision D5): the second request waits on the key's primary key until the first commits, then replays its outcome; if the first rolls back, the second runs as a new request.
+- Stored: successes and business rejections such as insufficient funds, so a retry gets the same answer. Not stored: malformed requests (`400`), so the client can fix them and retry with the same key, unknown customers (`404`) and server errors (`500`).
 - Keys are unique per customer and are written in the same transaction as the transfer, so a crash can never leave a transfer without its key, or the reverse.
 
 ## 5. Fund and unit registry (Should)

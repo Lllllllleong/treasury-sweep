@@ -1,6 +1,7 @@
 package io.github.lllllllleong.treasurysweep.api
 
 import io.github.lllllllleong.treasurysweep.customer.CustomerNotFoundException
+import io.github.lllllllleong.treasurysweep.idempotency.IdempotencyKeyReusedException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -28,6 +29,11 @@ class ApiErrorHandler : ResponseEntityExceptionHandler() {
     @ExceptionHandler
     fun customerNotFound(e: CustomerNotFoundException): ProblemDetail =
         problem(HttpStatus.NOT_FOUND, "customer_not_found", e.message)
+
+    /** 422 for a reused key, as the Idempotency-Key draft recommends. */
+    @ExceptionHandler
+    fun idempotencyKeyReused(e: IdempotencyKeyReusedException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_CONTENT, "idempotency_key_reused", e.message)
 }
 
 /** A problem response with a stable, machine-readable `code` next to the standard fields. */
