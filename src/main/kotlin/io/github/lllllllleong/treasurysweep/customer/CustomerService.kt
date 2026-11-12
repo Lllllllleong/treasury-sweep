@@ -1,5 +1,7 @@
 package io.github.lllllllleong.treasurysweep.customer
 
+import io.github.lllllllleong.treasurysweep.idempotency.IdempotencyKey
+import io.github.lllllllleong.treasurysweep.idempotency.IdempotencyService
 import io.github.lllllllleong.treasurysweep.ledger.Account
 import io.github.lllllllleong.treasurysweep.ledger.AccountCodes
 import io.github.lllllllleong.treasurysweep.ledger.LedgerService
@@ -19,6 +21,7 @@ class CustomerNotFoundException(customerId: Long) : RuntimeException("customer $
 class CustomerService(
     private val jdbc: JdbcClient,
     private val ledger: LedgerService,
+    private val idempotency: IdempotencyService,
 ) {
 
     /** Creates the customer and its cash account in one transaction: both rows or neither. */
@@ -43,12 +46,31 @@ class CustomerService(
     }
 
     /** Money received from the customer's own customers: Dr platform:bank, Cr customer cash. */
-    fun collect(customerId: Long, amount: Money): TransferResult =
-        ledger.transfer(platformBank().id, cashAccount(customerId).id, amount, TransferKind.COLLECTION)
+    @Transactional
+    fun collect(customerId: Long, key: IdempotencyKey, amount: Money): TransferResult =
+        postOnce(customerId, key, platformBank(), cashAccount(customerId), amount, TransferKind.COLLECTION)
 
     /** Card spend paid out of the customer's cash: Dr customer cash, Cr platform:bank. */
-    fun spendOnCard(customerId: Long, amount: Money): TransferResult =
-        ledger.transfer(cashAccount(customerId).id, platformBank().id, amount, TransferKind.CARD_SPEND)
+    @Transactional
+    fun spendOnCard(customerId: Long, key: IdempotencyKey, amount: Money): TransferResult =
+        postOnce(customerId, key, cashAccount(customerId), platformBank(), amount, TransferKind.CARD_SPEND)
+
+    /**
+     * Posts the transfer at most once per customer and key, inside the caller's transaction, so the key, the transfer
+     * and the account totals commit together. The callers look the accounts up first: an unknown customer is a 404
+     * before any key is stored.
+     */
+    private fun postOnce(
+        customerId: Long,
+        key: IdempotencyKey,
+        debit: Account,
+        credit: Account,
+        amount: Money,
+        kind: TransferKind,
+    ): TransferResult =
+        idempotency.once(customerId, key, fingerprint = "${kind.name}:${amount.cents}") {
+            ledger.transfer(debit.id, credit.id, amount, kind)
+        }
 
     private fun cashAccount(customerId: Long): Account =
         ledger.findAccount(AccountCodes.customerCash(customerId)) ?: throw CustomerNotFoundException(customerId)

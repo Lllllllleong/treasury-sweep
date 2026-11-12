@@ -27,7 +27,7 @@ class LedgerService(private val jdbc: JdbcClient) {
         val credit = if (first.id == creditAccountId) first else second
 
         // Return rather than throw: a RuntimeException would roll the transaction back,
-        // and S2 needs a decline to commit together with its idempotency record.
+        // and a decline has to commit together with its idempotency record.
         if (debit.debitsMustNotExceedCredits && debit.debitsPosted + amount > debit.creditsPosted) {
             return TransferResult.Declined(DeclineReason.INSUFFICIENT_FUNDS)
         }

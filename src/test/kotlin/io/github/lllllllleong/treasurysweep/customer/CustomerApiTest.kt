@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -86,7 +87,7 @@ class CustomerApiTest(
     fun `bad money is 400 and posts nothing`(body: String) {
         val id = createCustomer()
 
-        postJson("/customers/$id/collections", body).andExpect {
+        postJson("/customers/$id/collections", body, newKey()).andExpect {
             status { isBadRequest() }
             content { contentType(MediaType.APPLICATION_PROBLEM_JSON) }
         }
@@ -127,14 +128,18 @@ class CustomerApiTest(
 
     // --- helpers ---
 
-    private fun postJson(path: String, json: String): ResultActionsDsl =
+    private fun postJson(path: String, json: String, idempotencyKey: String? = null): ResultActionsDsl =
         mvc.post(path) {
             contentType = MediaType.APPLICATION_JSON
             content = json
+            if (idempotencyKey != null) header("Idempotency-Key", idempotencyKey)
         }
 
+    /** A transfer with a fresh Idempotency-Key, so every call is a new request. IdempotencyApiTest covers the key. */
     private fun postMoney(path: String, amount: String): ResultActionsDsl =
-        postJson(path, """{"amount":"$amount","currency":"AUD"}""")
+        postJson(path, """{"amount":"$amount","currency":"AUD"}""", newKey())
+
+    private fun newKey() = UUID.randomUUID().toString()
 
     private fun createCustomer(): Long {
         val body = postJson("/customers", """{"name":"Test customer"}""")

@@ -1,5 +1,6 @@
 package io.github.lllllllleong.treasurysweep.customer
 
+import io.github.lllllllleong.treasurysweep.api.IdempotencyKeyHeader
 import io.github.lllllllleong.treasurysweep.api.MoneyJson
 import io.github.lllllllleong.treasurysweep.api.problem
 import io.github.lllllllleong.treasurysweep.ledger.DeclineReason
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.net.URI
@@ -35,13 +37,22 @@ class CustomerController(private val customers: CustomerService) {
     @GetMapping("/{id}")
     fun get(@PathVariable id: Long): CustomerResponse = customers.get(id).toResponse()
 
+    // The header is optional to Spring so that a missing key gets our 400 (with a code), not Spring's own.
     @PostMapping("/{id}/collections")
-    fun collect(@PathVariable id: Long, @RequestBody amount: MoneyJson): ResponseEntity<*> =
-        toResponse(customers.collect(id, amount.toPositiveMoney()))
+    fun collect(
+        @PathVariable id: Long,
+        @RequestHeader(IdempotencyKeyHeader.NAME, required = false) idempotencyKey: String?,
+        @RequestBody amount: MoneyJson,
+    ): ResponseEntity<*> =
+        toResponse(customers.collect(id, IdempotencyKeyHeader.parse(idempotencyKey), amount.toPositiveMoney()))
 
     @PostMapping("/{id}/card-spend")
-    fun spendOnCard(@PathVariable id: Long, @RequestBody amount: MoneyJson): ResponseEntity<*> =
-        toResponse(customers.spendOnCard(id, amount.toPositiveMoney()))
+    fun spendOnCard(
+        @PathVariable id: Long,
+        @RequestHeader(IdempotencyKeyHeader.NAME, required = false) idempotencyKey: String?,
+        @RequestBody amount: MoneyJson,
+    ): ResponseEntity<*> =
+        toResponse(customers.spendOnCard(id, IdempotencyKeyHeader.parse(idempotencyKey), amount.toPositiveMoney()))
 
     private fun toResponse(result: TransferResult): ResponseEntity<*> = when (result) {
         is TransferResult.Posted ->
