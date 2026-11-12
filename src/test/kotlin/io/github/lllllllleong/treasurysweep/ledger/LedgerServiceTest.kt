@@ -1,6 +1,7 @@
 package io.github.lllllllleong.treasurysweep.ledger
 
 import io.github.lllllllleong.treasurysweep.TestcontainersConfiguration
+import io.github.lllllllleong.treasurysweep.runConcurrently
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -114,6 +115,21 @@ class LedgerServiceTest(
             ledger.transfer(customer, Long.MAX_VALUE, Money.parse("1.00"), TransferKind.CARD_SPEND)
         }
         assertEquals(0L to 0L, totals(customer))
+    }
+
+    // The double-spend test from spec section 10. Without FOR UPDATE in lockAccount, more than 20 spends post.
+    @Test
+    fun `50 concurrent spends of 10 against 200 post exactly 20`() {
+        val customer = newCustomerCashAccount()
+        collect(customer, "200.00")
+
+        val results = runConcurrently(50) { spend(customer, "10.00") }
+
+        // Three views of the same truth: what the callers were told, the transfer rows, and the cached totals.
+        assertEquals(20, results.count { it is TransferResult.Posted })
+        assertEquals(30, results.count { it == TransferResult.Declined(DeclineReason.INSUFFICIENT_FUNDS) })
+        assertEquals(20L, transfersDebiting(customer))
+        assertEquals(20000L to 20000L, totals(customer))
     }
 
     // --- helpers (fixtures) ---
