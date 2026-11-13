@@ -1,0 +1,76 @@
+# Unit tests for alerts.yml: promtool test rules alerts.test.yml (CI runs them, see .github/workflows/build.yml).
+# Each test feeds made-up series in, then checks which alerts are firing at given times. "0x4" means 0 repeated for
+# four more steps (five samples), one step being the test's interval.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: a balanced ledger never fires
+    interval: 15s
+    input_series:
+      - series: 'ledger_imbalance{job="treasury-sweep", instance="app:8080"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: LedgerImbalance
+        exp_alerts: []
+
+  - name: one cent off is pending for a minute, then fires
+    interval: 15s
+    input_series:
+      # Balanced for 30 seconds, then a credit of one cent too many.
+      - series: 'ledger_imbalance{job="treasury-sweep", instance="app:8080"}'
+        values: "0 0 -1x20"
+    alert_rule_test:
+      - eval_time: 1m # off for 30 seconds: pending, not firing
+        alertname: LedgerImbalance
+        exp_alerts: []
+      - eval_time: 2m # off for 90 seconds
+        alertname: LedgerImbalance
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: treasury-sweep
+              instance: app:8080
+            exp_annotations:
+              summary: Ledger debits and credits don't balance
+              description: "Total debits minus total credits is -1 cents on app:8080."
+
+  - name: a gauge that can't read the database fires too
+    interval: 15s
+    input_series:
+      - series: 'ledger_imbalance{job="treasury-sweep", instance="app:8080"}'
+        values: "NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN" # the "x" shorthand doesn't take NaN
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LedgerImbalance
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: treasury-sweep
+              instance: app:8080
+            exp_annotations:
+              summary: Ledger debits and credits don't balance
+              description: "Total debits minus total credits is NaN cents on app:8080."
+
+  - name: an app that stops answering scrapes fires TreasurySweepDown
+    interval: 15s
+    input_series:
+      - series: 'up{job="treasury-sweep", instance="app:8080"}'
+        values: "1 1 0x20"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TreasurySweepDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: TreasurySweepDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: treasury-sweep
+              instance: app:8080
+            exp_annotations:
+              summary: Prometheus can't scrape treasury-sweep
+              description: "app:8080 hasn't answered a scrape for a minute."
