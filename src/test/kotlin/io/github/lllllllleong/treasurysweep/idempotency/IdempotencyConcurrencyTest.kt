@@ -25,6 +25,7 @@ import java.util.concurrent.TimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -55,8 +56,9 @@ class IdempotencyConcurrencyTest(
 
         val results = runConcurrently(20) { customers.spendOnCard(customerId, key, TEN) }
 
-        val posted = assertIs<TransferResult.Posted>(results.first())
-        assertEquals(List(20) { posted }, results)
+        val posted = assertIs<TransferResult.Posted>(results.first().result)
+        assertEquals(List(20) { posted }, results.map { it.result })
+        assertEquals(1, results.count { !it.replayed }, "one request ran; the other 19 replayed it")
         assertEquals(1L, spendCount(customerId))
         assertEquals(Money.parse("90.00"), customers.get(customerId).cash)
     }
@@ -90,7 +92,9 @@ class IdempotencyConcurrencyTest(
         assertFailsWith<TimeoutException> { duplicate.get(500, TimeUnit.MILLISECONDS) }
 
         finishFirst.countDown()
-        assertEquals(first.get(10, TimeUnit.SECONDS), duplicate.get(10, TimeUnit.SECONDS))
+        val replay = duplicate.get(10, TimeUnit.SECONDS)
+        assertEquals(first.get(10, TimeUnit.SECONDS)?.result, replay.result)
+        assertTrue(replay.replayed)
         assertEquals(1L, spendCount(customerId))
     }
 
@@ -105,12 +109,18 @@ class IdempotencyConcurrencyTest(
         assertFailsWith<TimeoutException> { duplicate.get(500, TimeUnit.MILLISECONDS) }
 
         finishFirst.countDown()
-        val rolledBack = first.get(10, TimeUnit.SECONDS)
-        val posted = assertIs<TransferResult.Posted>(duplicate.get(10, TimeUnit.SECONDS))
+        val rolledBack = first.get(10, TimeUnit.SECONDS)?.result
+        val retried = duplicate.get(10, TimeUnit.SECONDS)
+        val posted = assertIs<TransferResult.Posted>(retried.result)
 
+        assertFalse(retried.replayed, "the duplicate ran as a new request")
         assertNotEquals(rolledBack, posted, "a new transfer, not a replay of the rolled-back one")
         assertEquals(1L, spendCount(customerId))
-        assertEquals(posted, customers.spendOnCard(customerId, key, TEN), "the key now replays the new transfer")
+        assertEquals(
+            IdempotentResult(posted, replayed = true),
+            customers.spendOnCard(customerId, key, TEN),
+            "the key now replays the new transfer",
+        )
     }
 
     @Test
@@ -130,8 +140,8 @@ class IdempotencyConcurrencyTest(
     private fun runAndHoldOpen(
         finish: CountDownLatch,
         rollBack: Boolean = false,
-        request: () -> TransferResult,
-    ): Future<TransferResult?> {
+        request: () -> IdempotentResult,
+    ): Future<IdempotentResult?> {
         val ran = CountDownLatch(1)
         val future = pool.submit(Callable {
             tx.execute { status ->
