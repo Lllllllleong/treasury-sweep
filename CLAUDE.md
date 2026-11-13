@@ -22,12 +22,12 @@ When a block's "done when" list is met, or at a checkpoint in `private/PLAN.md`,
 
 Leong is learning Kotlin and Spring Boot. He writes Go in production and knows Java from university, so explain Kotlin and Spring by comparison with Go where it helps: interfaces and dependency injection, error values vs exceptions and sealed results, goroutines vs threads, `context.Context` vs request scope and transactions, `defer` vs `use {}` and `try`/`finally`.
 
-| Area | Who writes it | Claude Code's role |
-|---|---|---|
-| Domain code: ledger, transfers, idempotency, unit registry, fund orders, sweep rule, reconciliation | Leong | Hints, review, explaining errors, pointing to docs. Write domain code only when Leong asks for a specific piece; keep it small and walk through it. |
-| Domain tests: what to test and the assertions | Leong | Suggest missed cases, especially concurrency, rounding and failure paths. |
-| Build files, Flyway boilerplate, test fixtures | Either | Generate on request; explain anything non-obvious. |
-| Docker Compose, Prometheus, Grafana, Kubernetes manifests, CI | Claude Code | Generate on request, then walk Leong through each block: he has to be able to explain it in an interview. |
+| Area | Who writes it | Claude Code's role                                                                                                                                                       |
+|---|---|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Domain code: ledger, transfers, idempotency, unit registry, fund orders, sweep rule, reconciliation | Either | Generate on request; Hints, review, explaining errors, pointing to docs. Write domain code only when Leong asks for a specific piece; keep it small and walk through it. |
+| Domain tests: what to test and the assertions | Either | Generate on request;Suggest missed cases, especially concurrency, rounding and failure paths.                                                                            |
+| Build files, Flyway boilerplate, test fixtures | Either | Generate on request; explain anything non-obvious.                                                                                                                       |
+| Docker Compose, Prometheus, Grafana, Kubernetes manifests, CI | Either | Generate on request, then walk Leong through each block: he has to be able to explain it in an interview.                                                                |
 
 ## Rules
 
