@@ -1,0 +1,13 @@
+# Loads every dashboard JSON file in grafana/dashboards (mounted at /var/lib/grafana/dashboards), checking for
+# changes every 10 seconds. The files are the source of truth: a provisioned dashboard can be edited in the UI but
+# not saved there. To change one, edit it, use "Export > Export as JSON", and replace the file.
+apiVersion: 1
+
+providers:
+  - name: treasury-sweep
+    folder: Treasury Sweep
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards

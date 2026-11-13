@@ -1,0 +1,13 @@
+# Grafana loads this at startup, so the datasource exists without clicking through the UI.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus # fixed, so the dashboard JSON can refer to it
+    type: prometheus
+    access: proxy # Grafana's server sends the queries, not the browser
+    url: http://prometheus:9090 # the Compose service name; localhost here would be Grafana's own container
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s # Prometheus's scrape_interval, which $__rate_interval is computed from
