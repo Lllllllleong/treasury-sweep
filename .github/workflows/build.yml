@@ -15,6 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # promtool ships in the Prometheus image; keep the tag in step with compose.yaml.
+      - name: Check Prometheus config and alert rules
+        run: |
+          promtool() { docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" -w /etc/prometheus --entrypoint promtool prom/prometheus:v3.15.1 "$@"; }
+          promtool check config prometheus.yml
+          promtool test rules alerts.test.yml
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
