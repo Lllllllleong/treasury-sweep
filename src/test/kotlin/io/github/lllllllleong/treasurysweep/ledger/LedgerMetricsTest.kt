@@ -3,6 +3,7 @@ package io.github.lllllllleong.treasurysweep.ledger
 import com.jayway.jsonpath.JsonPath
 import io.github.lllllllleong.treasurysweep.TestcontainersConfiguration
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics
 import org.springframework.boot.test.context.SpringBootTest
@@ -10,11 +11,15 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.jdbc.datasource.DelegatingDataSource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import java.sql.Connection
+import java.sql.SQLException
 import java.util.UUID
+import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -22,14 +27,17 @@ import kotlin.test.assertTrue
 // The ledger metrics (spec section 9), driven over HTTP because the controller records them. Spring Boot's tests swap
 // every metrics exporter for an in-memory registry; @AutoConfigureMetrics puts the Prometheus one back, so
 // /actuator/prometheus works. It also changes the context's cache key, so this class gets its own context and container.
+// The imbalance check runs once at startup, then only when a test calls it, so the scheduler can't race the asserts.
 @Import(TestcontainersConfiguration::class)
-@SpringBootTest
+@SpringBootTest(properties = ["ledger.imbalance-check.delay=1h"])
 @AutoConfigureMockMvc
 @AutoConfigureMetrics
 class LedgerMetricsTest(
     @Autowired private val mvc: MockMvc,
     @Autowired private val registry: MeterRegistry,
+    @Autowired private val metrics: LedgerMetrics,
     @Autowired private val jdbc: JdbcClient,
+    @Autowired private val dataSource: DataSource,
 ) {
 
     @Test
@@ -83,17 +91,46 @@ class LedgerMetricsTest(
 
     @Test
     fun `the imbalance gauge reads zero, and catches a total that is one cent off`() {
+        metrics.checkImbalance()
         assertEquals(0.0, imbalance())
 
         // Corrupt one cached total the way a bug would, then put it back. Nothing else in this context uses
         // platform:fund-payable until the fund block, and each test context has its own database.
         shiftFundPayableCredits(1)
         try {
+            metrics.checkImbalance()
             assertEquals(-1.0, imbalance())
         } finally {
             shiftFundPayableCredits(-1)
         }
+        metrics.checkImbalance()
         assertEquals(0.0, imbalance())
+    }
+
+    @Test
+    fun `a check that can't reach the database reports NaN, and recovers`() {
+        // The test database behind a switch that fails every new connection, as if PostgreSQL had stopped. The
+        // LedgerMetrics is built by hand, outside Spring, with its own registry: just a constructor call, as in Go.
+        var down = false
+        val switchable = object : DelegatingDataSource(dataSource) {
+            override fun getConnection(): Connection =
+                if (down) throw SQLException("connection refused") else super.getConnection()
+        }
+        val ownRegistry = SimpleMeterRegistry()
+        val checker = LedgerMetrics(ownRegistry, JdbcClient.create(switchable))
+        val gauge = ownRegistry.get("ledger.imbalance").gauge()
+
+        assertTrue(gauge.value().isNaN(), "NaN before the first check")
+        checker.checkImbalance()
+        assertEquals(0.0, gauge.value())
+
+        down = true
+        checker.checkImbalance()
+        assertTrue(gauge.value().isNaN(), "NaN, not the stale 0, once the check fails")
+
+        down = false
+        checker.checkImbalance()
+        assertEquals(0.0, gauge.value())
     }
 
     // --- helpers ---

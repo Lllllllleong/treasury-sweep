@@ -4,7 +4,10 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
@@ -24,6 +27,11 @@ enum class TransferOutcome {
 @Component
 class LedgerMetrics(private val registry: MeterRegistry, private val jdbc: JdbcClient) {
 
+    // Written by the scheduler's thread, read by the scrape's: @Volatile makes the write visible to the reader, like an
+    // atomic store and load in Go. NaN until the first check, and whenever a check fails.
+    @Volatile
+    private var lastImbalanceCents = Double.NaN
+
     init {
         // Every series starts at zero from the first scrape. A counter whose first sample is already 1 shows no increase
         // to rate(), and a missing series leaves a gap on the dashboard until that kind and outcome first happen.
@@ -32,13 +40,30 @@ class LedgerMetrics(private val registry: MeterRegistry, private val jdbc: JdbcC
             duration(kind)
         }
 
-        // Read from the database on every scrape. Micrometer keeps only a weak reference to a gauge's state object, so
-        // the state is this bean, which the Spring context keeps alive; a throwaway object would be garbage-collected
-        // and the gauge would read NaN. If the query throws, Micrometer reports NaN, and the alert treats that as a
-        // break too (see prometheus/alerts.yml).
-        Gauge.builder("ledger.imbalance", this) { it.imbalanceCents().toDouble() }
+        // Reads the last check's result, so a scrape never waits for the database. Micrometer keeps only a weak reference
+        // to a gauge's state object, so the state is this bean, which the Spring context keeps alive; a throwaway object
+        // would be garbage-collected and the gauge would read NaN.
+        Gauge.builder("ledger.imbalance", this) { it.lastImbalanceCents }
             .description("Sum of debits minus sum of credits over all accounts, in cents; 0 unless the ledger is broken")
             .register(registry)
+    }
+
+    /**
+     * Re-checks invariant I1 off the scrape path. The query used to run inside the gauge: with PostgreSQL stopped, each
+     * scrape then waited 30 seconds for a connection (Hikari's timeout), Prometheus gave up after 5, and the app looked
+     * down instead of the check looking broken. Now a failed check sets NaN, which the LedgerImbalance alert treats
+     * as a break (see prometheus/alerts.yml).
+     *
+     * Fixed delay, not fixed rate: the next check starts 5 seconds after the last one ends, so slow checks never pile up.
+     */
+    @Scheduled(fixedDelayString = "\${ledger.imbalance-check.delay:5s}")
+    fun checkImbalance() {
+        lastImbalanceCents = try {
+            imbalanceCents().toDouble()
+        } catch (e: Exception) {
+            log.warn("Ledger imbalance check failed: {}", e.message)
+            Double.NaN
+        }
     }
 
     /**
@@ -82,4 +107,8 @@ class LedgerMetrics(private val registry: MeterRegistry, private val jdbc: JdbcC
 
     private val TransferKind.tag: String
         get() = name.lowercase()
+
+    private companion object {
+        val log: Logger = LoggerFactory.getLogger(LedgerMetrics::class.java)
+    }
 }
