@@ -176,9 +176,12 @@ Micrometer metric names (the Prometheus registry adds suffixes, so `ledger.trans
 | `recon.breaks.open` | Gauge | `check` | Should |
 | `sweep.decisions` | Counter | `action` | Should |
 
-**Grafana** (dashboard provisioned from JSON in the repo): transfers per second by outcome, p95 transfer latency, ledger imbalance, open reconciliation breaks, fund administrator error rate.
+- `ledger.transfers` and `ledger.transfer.duration` are recorded after the service's transaction commits, so a rolled-back transfer is never counted. Requests that fail (`400`, `404`, a reused key, `500`) appear only in Spring's own `http.server.requests`.
+- `ledger.imbalance` comes from a background check every 5 seconds, not from the scrape, so a scrape never waits for the database. A check that fails reports NaN.
 
-**Prometheus alert rules:** `LedgerImbalance` (not zero for 1 minute; Must) and `ReconBreaksOpen` (above zero for 5 minutes; Should).
+**Grafana** (dashboard provisioned from JSON in the repo): transfers per second by outcome, p95 transfer latency, ledger imbalance, firing alerts, API responses by status, open reconciliation breaks, fund administrator error rate.
+
+**Prometheus alert rules** (`prometheus/alerts.yml`, unit-tested with `promtool`): `LedgerImbalance` (not zero for 1 minute, NaN included, because a check that can't run counts as a break; Must), `TreasurySweepDown` (no successful scrape for 1 minute, since a stopped app has no imbalance series to alert on; Must) and `ReconBreaksOpen` (above zero for 5 minutes; Should).
 
 ## 10. Testing (Must)
 

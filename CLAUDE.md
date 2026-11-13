@@ -46,8 +46,10 @@ Docker must be running for anything that starts PostgreSQL (tests and `bootTestR
 - `./gradlew build`: compile and run all tests; this is what CI runs (`.github/workflows/build.yml`).
 - `./gradlew test`: tests only. One class: `./gradlew test --tests '*TreasurySweepApplicationTests'`.
 - `./gradlew bootTestRun`: run the app against a throwaway Testcontainers PostgreSQL (`TestTreasurySweepApplication`). No `compose.yaml` needed.
+- `docker compose up -d` then `./gradlew bootRun`: the app on port 8080 against the Compose PostgreSQL, with Prometheus (localhost:9090) and Grafana (localhost:3000). Prometheus scrapes port 8080 only, so nothing else may hold it. `docker compose down -v` deletes the database.
+- `scripts/traffic.sh [seconds] [base URL]` (Git Bash): mixed traffic for the dashboard.
+- Alert rules, as CI checks them (Git Bash needs `MSYS_NO_PATHCONV=1` and `$(pwd -W)` in place of `$PWD`): `docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" -w /etc/prometheus --entrypoint promtool prom/prometheus:v3.15.1 test rules alerts.test.yml`. After editing `prometheus/*.yml`, `docker compose kill -s SIGHUP prometheus` reloads them.
 
 Not yet available; update this list when they work:
 
-- `docker compose up -d` then `./gradlew bootRun`: once `compose.yaml` exists (S1 or S3).
 - `kubectl apply -f k8s/`: once the manifests exist (Saturday stretch or U4).
