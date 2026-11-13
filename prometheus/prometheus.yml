@@ -1,0 +1,16 @@
+# Prometheus for the local stack (compose.yaml): scrapes the app on the host and evaluates alerts.yml.
+# Check it with: promtool check config prometheus.yml (CI does, see .github/workflows/build.yml).
+global:
+  # Short, so the dashboard reacts within seconds during a demo; 15 to 60 seconds is more usual in production.
+  # Grafana's datasource sets timeInterval to the same value, so $__rate_interval covers at least four scrapes.
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: treasury-sweep
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]

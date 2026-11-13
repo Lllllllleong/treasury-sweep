@@ -1,0 +1,27 @@
+# Alert rules, evaluated by Prometheus itself: firing alerts show at http://localhost:9090/alerts and as the ALERTS
+# series on the dashboard. There's no Alertmanager, which would only route them on (email, chat, paging).
+# Unit tests: alerts.test.yml.
+groups:
+  - name: treasury-sweep
+    rules:
+      - alert: LedgerImbalance
+        # Invariant I1: total debits equal total credits. Every transfer moves both sides by the same amount, so any
+        # other value is a bug or a hand edit of the accounts table. NaN fires too (NaN != 0 is true in PromQL): it
+        # means the gauge couldn't read the database, and a control that can't run is reported, not assumed to pass.
+        expr: ledger_imbalance != 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Ledger debits and credits don't balance
+          description: "Total debits minus total credits is {{ $value }} cents on {{ $labels.instance }}."
+
+      - alert: TreasurySweepDown
+        # When the app is down there's no ledger_imbalance series at all, so LedgerImbalance can't fire. This one can.
+        expr: up{job="treasury-sweep"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus can't scrape treasury-sweep
+          description: "{{ $labels.instance }} hasn't answered a scrape for a minute."
