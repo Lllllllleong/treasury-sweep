@@ -1,0 +1,55 @@
+# The local stack: PostgreSQL for the app, Prometheus to scrape it and evaluate the alerts, Grafana to show it.
+# The app runs on the host (./gradlew bootRun), so Prometheus reaches it at host.docker.internal:8080.
+# Every port is bound to 127.0.0.1: nothing here is reachable from the network, which is what makes the fixed
+# password and Grafana's anonymous admin acceptable.
+name: treasury-sweep
+
+services:
+  postgres:
+    image: postgres:18 # the same image as the Testcontainers tests
+    environment:
+      POSTGRES_DB: treasury_sweep
+      POSTGRES_USER: treasury_sweep
+      POSTGRES_PASSWORD: treasury_sweep # local only; application.properties has the same
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # PostgreSQL 18's image keeps its data in /var/lib/postgresql/18/docker, so the volume goes on the parent. A
+      # volume on /var/lib/postgresql/data, as most older guides show, makes the container refuse to start.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U treasury_sweep -d treasury_sweep"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      # prometheus.yml (what to scrape) and alerts.yml (the rules), read-only. After editing either:
+      # docker compose kill -s SIGHUP prometheus   (reloads without a restart)
+      - ./prometheus:/etc/prometheus:ro
+    extra_hosts:
+      # Docker Desktop already defines host.docker.internal; this line makes it work on Linux too.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Local demo only: no login, and everyone is an admin, so panels can be edited and their JSON exported.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      # The Prometheus datasource and the dashboard provider, then the dashboard JSON itself.
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-data:
