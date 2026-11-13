@@ -12,12 +12,19 @@ import java.sql.Types
 class IdempotencyKeyReusedException(key: IdempotencyKey) :
     RuntimeException("Idempotency-Key \"${key.value}\" was already used for a different request")
 
+/**
+ * What [IdempotencyService.once] answered: the transfer's outcome, and whether an earlier request with the same key
+ * stored it ([replayed]) or this request ran it. The client gets the same response either way; metrics tell them apart.
+ */
+data class IdempotentResult(val result: TransferResult, val replayed: Boolean)
+
 @Service
 class IdempotencyService(private val jdbc: JdbcClient) {
 
     /**
      * Runs [transfer] at most once per customer and key. A repeat of the same request gets the stored result without
-     * running it again (a replay); a different request with the same key throws [IdempotencyKeyReusedException].
+     * running it again (a replay, flagged in [IdempotentResult.replayed]); a different request with the same key throws
+     * [IdempotencyKeyReusedException].
      *
      * MANDATORY: the caller's transaction must already be open, so the key commits together with the transfer or not
      * at all. Without one, the claim would autocommit on its own and could outlive a failed transfer.
@@ -28,15 +35,16 @@ class IdempotencyService(private val jdbc: JdbcClient) {
         key: IdempotencyKey,
         fingerprint: String,
         transfer: () -> TransferResult,
-    ): TransferResult {
+    ): IdempotentResult {
         if (claim(customerId, key, fingerprint)) {
-            return transfer().also { record(customerId, key, it) }
+            return IdempotentResult(transfer().also { record(customerId, key, it) }, replayed = false)
         }
         val stored = find(customerId, key)
         if (stored.fingerprint != fingerprint) {
             throw IdempotencyKeyReusedException(key)
         }
-        return checkNotNull(stored.result) { "Idempotency-Key \"${key.value}\" of customer $customerId has no result" }
+        val result = checkNotNull(stored.result) { "Idempotency-Key \"${key.value}\" of customer $customerId has no result" }
+        return IdempotentResult(result, replayed = true)
     }
 
     /**

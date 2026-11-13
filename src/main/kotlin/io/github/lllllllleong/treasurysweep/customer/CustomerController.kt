@@ -44,7 +44,7 @@ class CustomerController(private val customers: CustomerService) {
         @RequestHeader(IdempotencyKeyHeader.NAME, required = false) idempotencyKey: String?,
         @RequestBody amount: MoneyJson,
     ): ResponseEntity<*> =
-        toResponse(customers.collect(id, IdempotencyKeyHeader.parse(idempotencyKey), amount.toPositiveMoney()))
+        toResponse(customers.collect(id, IdempotencyKeyHeader.parse(idempotencyKey), amount.toPositiveMoney()).result)
 
     @PostMapping("/{id}/card-spend")
     fun spendOnCard(
@@ -52,7 +52,7 @@ class CustomerController(private val customers: CustomerService) {
         @RequestHeader(IdempotencyKeyHeader.NAME, required = false) idempotencyKey: String?,
         @RequestBody amount: MoneyJson,
     ): ResponseEntity<*> =
-        toResponse(customers.spendOnCard(id, IdempotencyKeyHeader.parse(idempotencyKey), amount.toPositiveMoney()))
+        toResponse(customers.spendOnCard(id, IdempotencyKeyHeader.parse(idempotencyKey), amount.toPositiveMoney()).result)
 
     private fun toResponse(result: TransferResult): ResponseEntity<*> = when (result) {
         is TransferResult.Posted ->

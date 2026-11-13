@@ -2,12 +2,12 @@ package io.github.lllllllleong.treasurysweep.customer
 
 import io.github.lllllllleong.treasurysweep.idempotency.IdempotencyKey
 import io.github.lllllllleong.treasurysweep.idempotency.IdempotencyService
+import io.github.lllllllleong.treasurysweep.idempotency.IdempotentResult
 import io.github.lllllllleong.treasurysweep.ledger.Account
 import io.github.lllllllleong.treasurysweep.ledger.AccountCodes
 import io.github.lllllllleong.treasurysweep.ledger.LedgerService
 import io.github.lllllllleong.treasurysweep.ledger.Money
 import io.github.lllllllleong.treasurysweep.ledger.TransferKind
-import io.github.lllllllleong.treasurysweep.ledger.TransferResult
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -47,12 +47,12 @@ class CustomerService(
 
     /** Money received from the customer's own customers: Dr platform:bank, Cr customer cash. */
     @Transactional
-    fun collect(customerId: Long, key: IdempotencyKey, amount: Money): TransferResult =
+    fun collect(customerId: Long, key: IdempotencyKey, amount: Money): IdempotentResult =
         postOnce(customerId, key, platformBank(), cashAccount(customerId), amount, TransferKind.COLLECTION)
 
     /** Card spend paid out of the customer's cash: Dr customer cash, Cr platform:bank. */
     @Transactional
-    fun spendOnCard(customerId: Long, key: IdempotencyKey, amount: Money): TransferResult =
+    fun spendOnCard(customerId: Long, key: IdempotencyKey, amount: Money): IdempotentResult =
         postOnce(customerId, key, cashAccount(customerId), platformBank(), amount, TransferKind.CARD_SPEND)
 
     /**
@@ -67,7 +67,7 @@ class CustomerService(
         credit: Account,
         amount: Money,
         kind: TransferKind,
-    ): TransferResult =
+    ): IdempotentResult =
         idempotency.once(customerId, key, fingerprint = "${kind.name}:${amount.cents}") {
             ledger.transfer(debit.id, credit.id, amount, kind)
         }
